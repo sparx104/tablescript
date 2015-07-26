@@ -1,0 +1,56 @@
+newdict part("name") set("chris")
+    part("age") set("old") >data
+    echo
+
+<"|n" echo
+
+<data newDict("age") >d
+<data part("name") get >_; <d part("name") set(_) echo
+
+stop
+
+
+
+
+<0 >index
+<10 >count
+
+:LOOP
+    <index add(1) multiplyBy(5) echo 
+    <"|n" echo
+    <index increaseby(1) >index
+<index islessthan(count) ? goto(:LOOP)
+stop
+
+
+:EVENT_TEST
+    platform.newFileSpec("notepad") .onDoneGoto(:DONE) >launch_notepad
+    <"test.txt" >file
+    <launch_notepad platform.args(file) .exec
+    
+    
+
+
+stop
+gosub(:SETVAR)
+goto(:RUN)
+stop
+
+:SETVAR
+    <"te" >TEST
+    gosub(:PART2)
+    return
+
+    :PART2
+        <TEST append("st")
+        # table doesn't get reset
+        >TEST
+        return
+
+
+:SETVAR2
+<"thingy" >TEST
+return
+
+:RUN
+<"this is a" append(" ") append(TEST), echo
