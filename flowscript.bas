@@ -9,14 +9,14 @@
 #define TSCRIPT_LOG_LABELS
 #endif
 
-' these are used internall as results for boolean operators
+' these are used internally as results for boolean operators
 #define OK_SET_TRUE "21"
 #define OK_SET_FALSE "20"
-#define RETURN_OK_SET(n) return( (TScript.CMD_OK_SET & n) )
-#define RETURN_ERROR(n) return( (TScript.CMD_ERROR & n) )
+#define RETURN_OK_SET(n) return( (Flow.CMD_OK_SET & n) )
+#define RETURN_ERROR(n) return( (Flow.CMD_ERROR & n) )
 
-namespace TScript
-    ' These are for returning from tableCommand()
+namespace Flow
+    ' These are for returning from flowCommand()
     const as string  _
             CMD_ERROR   = "0",  _
             CMD_OK      = "1",  _
@@ -24,7 +24,6 @@ namespace TScript
             CMD_GOTO    = "3",  _
             CMD_SKIP    = "4",  _
             CMD_STOP    = "5",  _
-            CMD_OK_SET_AND_GOTO = "6",  _
             CMD_NOT_OURS = "9"
             
     declare function addPlugin( pl as function( as string, as string, as string, as string ) as string ) as integer
@@ -34,12 +33,13 @@ namespace TScript
 
     ' although this is byref don't change it - the return value can change if it needed, it's just to
     '  save copying
-    declare function tableCommand( byref table as string, byref plugin as string, byref cmd as string, byref arg as string ) as string
+    declare function flowCommand( byref table as string, byref plugin as string, byref cmd as string, byref arg as string ) as string
 
     declare function setPart( d as string, sk as string, sv as string ) as string
-    declare function getPart( from as string, gk as string ) as string
-    declare function newParts( from as string = "", keys as string = "" ) as string
-
+    declare function getPart( from as string, gk as string, def as string = "" ) as string
+    declare function newBundle( from as string = "", keys as string = "" ) as string
+    declare function newBundleWithKV( key as string, value as string ) as string
+    
     dim _plugins( 0 to 14 ) as function( byref as string, byref as string, byref as string, byref as string ) as string
     dim _plugin_count as integer
 
@@ -53,9 +53,9 @@ namespace TScript
     dim as string _last_getset
     
     function addPlugin( pl as function( as string, as string, as string, as string ) as string ) as integer
-        if( TScript._plugin_count < ubound( TScript._plugins ) ) then
-            TScript._plugins(TScript._plugin_count) = pl
-            TScript._plugin_count += 1
+        if( Flow._plugin_count < ubound( Flow._plugins ) ) then
+            Flow._plugins(Flow._plugin_count) = pl
+            Flow._plugin_count += 1
             return TRUE
         end if
         return FALSE
@@ -63,19 +63,19 @@ namespace TScript
     
     function load( src as string, vars as DICTSTRING = "" ) as integer
         ' first, we look for labels, each must be on a new line
-        TScript._labels = Dict.create()
-        TScript._script = (src & "\n")
-        TScript._vars = vars
-        dim as integer s = 1, e = instr( TScript._script, !"\n" )
+        Flow._labels = Dict.create()
+        Flow._script = (src & "\n")
+        Flow._vars = vars
+        dim as integer s = 1, e = instr( Flow._script, !"\n" )
         while( e > 0 )
             while( s < e )
-                if( asc( TScript._script, s ) = 58 ) then        ' 58 is :
-                    Dict.set( TScript._labels, mid( TScript._script, s, (e - s - 1) ), s ) 
+                if( asc( Flow._script, s ) = 58 ) then        ' 58 is :
+                    Dict.set( Flow._labels, mid( Flow._script, s, (e - s - 1) ), s ) 
                     ' note: we set to s above as this will "run" the label (allowing logging etc. as well
                     '  as causing the line end reset code to trigger,
                     '  we could use e to indicate the end of the label instead but wouldn't get the
                     '  free "end-of-line reset" then or logging.
-                elseif( asc( TScript._script, s ) <= 32 ) then
+                elseif( asc( Flow._script, s ) <= 32 ) then
                     ' nothing
                 else
                     exit while
@@ -83,7 +83,7 @@ namespace TScript
                 s += 1
             wend
             s = (e + 1)
-            e = instr( s, TScript._script, !"\n" )
+            e = instr( s, Flow._script, !"\n" )
         wend
         return TRUE
     end function
@@ -91,21 +91,21 @@ namespace TScript
     function run( from as string = "" ) as integer
         dim as integer call_stack(30)
         dim as integer call_stack_ptr
-        dim as integer s_idx, l = len( TScript._script ), t
+        dim as integer s_idx, l = len( Flow._script ), t
         dim as integer in_q = FALSE, wait_eol = FALSE
         dim as string c, token = "", arg, current_app = ""
         dim as integer s = 1
         if( len( from ) > 0 ) then
-            s = Dict.intValueOf( TScript._labels, from, -1 )
+            s = Dict.intValueOf( Flow._labels, from, -1 )
             if( s = -1 ) then
-                Utils.echoError( "[TScript] Missing label: " & from & "  @ 0")
+                Utils.echoError( "[Flow] Missing label: " & from & "  @ 0")
                 return 0
             end if
         end if
-        TScript.call_stack_ptr = 0
+        Flow.call_stack_ptr = 0
         
         for s_idx = s to l
-            c = chr( asc( TScript._script, s_idx ) )
+            c = chr( asc( Flow._script, s_idx ) )
             if( wait_eol ) then             ' we're looking the end of the line ignoring until then
                 if( c = !"\n" ) then
                     wait_eol = FALSE
@@ -119,7 +119,7 @@ namespace TScript
             if( in_q ) then                 ' we're in quotes
                 if( c = "|" ) then
                     s_idx += 1
-                    select case( chr( asc( TScript._script, s_idx ) ) )
+                    select case( chr( asc( Flow._script, s_idx ) ) )
                         case "q":   token &= """"
                         case "n":   token &= !"\n"
                         case "t":   token &= !"\t"
@@ -152,7 +152,7 @@ namespace TScript
                                     arg = mid( token, (t + 1), (len( token ) - t - 1) )
                                     token = mid( token, 1, (t - 1) )
                                 else
-                                    Utils.echoError( "[TScript] Invalid command spec: " & token & "  @ " & s_idx)
+                                    Utils.echoError( "[Flow] Invalid command spec: " & token & "  @ " & s_idx)
                                     return 0
                                 end if
                             else
@@ -173,11 +173,11 @@ namespace TScript
                                 arg = str( val( arg ) )
                             elseif( len( arg ) > 0 ) then
                                 'must be a variable
-                                'if( TScript._containsVar( arg ) ) then
-                                if( Dict.containsKey( TScript._vars, arg ) ) then
-                                    arg = Dict.valueOf( TScript._vars, arg )
+                                'if( Flow._containsVar( arg ) ) then
+                                if( Dict.containsKey( Flow._vars, arg ) ) then
+                                    arg = Dict.valueOf( Flow._vars, arg )
                                 else
-                                    Utils.echoError( ("[TScript] Undefined variable: " & arg & "  @ " & s_idx) )
+                                    Utils.echoError( ("[Flow] Undefined variable: " & arg & "  @ " & s_idx) )
                                     return 0
                                 end if
                             end if
@@ -198,15 +198,15 @@ namespace TScript
                         end if
                         select case( token )
                             case ">"
-                                'TScript._setVar( arg, table )
-                                Dict.set( TScript._vars, arg, TScript._table )
+                                'Flow._setVar( arg, table )
+                                Dict.set( Flow._vars, arg, Flow._table )
                             case "<"
-                                TScript._table = arg
+                                Flow._table = arg
                             case "~"
-                                Dict.remove( TScript._vars, arg )
+                                Dict.remove( Flow._vars, arg )
                             case ":"
-                                #ifdef TSCRIPT_LOG_LABELS
-                                    Utils.echo( ("[TScript] Encountered Label: " & arg & "  @ " & s_idx & !"\n") )
+                                #ifdef Flow_LOG_LABELS
+                                    Utils.echo( ("[Flow] Encountered Label: " & arg & "  @ " & s_idx & !"\n") )
                                 #endif                            
                             case ""
                                 ' do nothing
@@ -223,18 +223,18 @@ namespace TScript
                                     current_app = mid( token, 1, (t - 1) )
                                     token = mid( token, (t + 1) )
                                 end if
-                                arg = TScript.tableCommand( TScript._table, current_app, token, arg )
+                                arg = Flow.flowCommand( Flow._table, current_app, token, arg )
                                 select case( (asc( arg, 1 ) - asc( "0" )) )
                                     case 0:     ' CMD_ERROR
-                                        Utils.echoError( ("[TScript] " & mid( arg, 2 ) & "  @ " & s_idx) )
+                                        Utils.echoError( ("[Flow] " & mid( arg, 2 ) & "  @ " & s_idx) )
                                         return 0
                                     case 1:     ' CMD_OK
                                     case 2:     ' CMD_OK_SET
-                                        TScript._table = mid( arg, 2 )
+                                        Flow._table = mid( arg, 2 )
                                     case 3:     'goto
-                                        s_idx = Dict.intValueOf( TScript._labels, mid( arg, 2 ), -1 )
+                                        s_idx = Dict.intValueOf( Flow._labels, mid( arg, 2 ), -1 )
                                         if( s_idx = -1 ) then
-                                            Utils.echoError( ("[TScript] Missing label: " & mid( arg, 2 ) & "  @ " & s_idx) )
+                                            Utils.echoError( ("[Flow] Missing label: " & mid( arg, 2 ) & "  @ " & s_idx) )
                                             return 0
                                         end if
                                         s_idx -= 1      ' "next" will add one 
@@ -269,14 +269,14 @@ namespace TScript
     '	9	not_me	special value for plugins to indicate that command is not theirs
     '
     ' it also has the special case of handling plugins
-    function tableCommand( table as string, plugin as string, cmd as string, arg as string ) as string
+    function flowCommand( table as string, plugin as string, cmd as string, arg as string ) as string
         if( len( plugin ) > 0 ) then
             ' this is a plugin
-            if( TScript._plugin_count > 0 ) then
+            if( Flow._plugin_count > 0 ) then
                 dim as integer i
                 dim as string res
-                for i = 0 to (TScript._plugin_count - 1)
-                    res = TScript._plugins(i)( table, plugin, cmd, arg )
+                for i = 0 to (Flow._plugin_count - 1)
+                    res = Flow._plugins(i)( table, plugin, cmd, arg )
                     if( asc( res, 1 ) <> 57 ) then       ' 57 is "9" - NOT_OURS
                         return res
                     end if
@@ -287,9 +287,9 @@ namespace TScript
         select case( cmd )
             'flow control
             case "goto"
-                return (TScript.CMD_GOTO & arg)
+                return (Flow.CMD_GOTO & arg)
             case "stop"
-                return TScript.CMD_STOP
+                return Flow.CMD_STOP
             
             'output
             case "echo"
@@ -306,25 +306,25 @@ namespace TScript
                 
             'parts
             case "newparts", "newdict"
-                RETURN_OK_SET( TScript.newParts( table, arg ) )
+                RETURN_OK_SET( Flow.newBundle( table, arg ) )
             case "part"
-                TScript._last_value = arg
-                TScript._last_getset = "part"
-                return TScript.CMD_OK
+                Flow._last_value = arg
+                Flow._last_getset = "part"
+                return Flow.CMD_OK
                 
             'get/set
             case "set"
-                select case( TScript._last_getset )
+                select case( Flow._last_getset )
                     case "part":
-                        table = TScript.setPart( table, TScript._last_value, arg )
+                        table = Flow.setPart( table, Flow._last_value, arg )
                         RETURN_OK_SET( table )
                     case else:
                         RETURN_ERROR( "SET with unknown modifier-type" )
                 end select
             case "get"
-                select case( TScript._last_getset )
+                select case( Flow._last_getset )
                     case "part":
-                        RETURN_OK_SET( TScript.getPart( table, TScript._last_value ) )
+                        RETURN_OK_SET( Flow.getPart( table, Flow._last_value ) )
                     case else:
                         RETURN_ERROR( "GET with unknown modifier-type" )
                 end select
@@ -332,15 +332,15 @@ namespace TScript
             ' conditionals
             case "?", "true?"
                 if( (table <> "") andalso (cint( table ) <> 0) ) then
-                    return TScript.CMD_OK
+                    return Flow.CMD_OK
                 else
-                    return TScript.CMD_SKIP
+                    return Flow.CMD_SKIP
                 end if
             case "false?"
                 if( (table = "") orelse (cint( table ) = 0) ) then       '48 is 0
-                    return TScript.CMD_OK
+                    return Flow.CMD_OK
                 else
-                    return TScript.CMD_SKIP
+                    return Flow.CMD_SKIP
                 end if
                 
             ' conditional operations
@@ -359,17 +359,17 @@ namespace TScript
                 
             ' maths ops
             case "append", "join"
-                return (TScript.CMD_OK_SET & table & arg)
+                return (Flow.CMD_OK_SET & table & arg)
             case "add", "increaseby"
-                return (TScript.CMD_OK_SET & (val( table ) + val( arg )))
+                return (Flow.CMD_OK_SET & (val( table ) + val( arg )))
             case "subtract", "decreaseby"
-                return (TScript.CMD_OK_SET & (val( table ) - val( arg )))
+                return (Flow.CMD_OK_SET & (val( table ) - val( arg )))
             case "multiplyby"
-                return (TScript.CMD_OK_SET & (val( table ) * val( arg )))
+                return (Flow.CMD_OK_SET & (val( table ) * val( arg )))
             case "divideby"
-                return (TScript.CMD_OK_SET & (val( table ) / val( arg )))
+                return (Flow.CMD_OK_SET & (val( table ) / val( arg )))
             case "moddivby"
-                return (TScript.CMD_OK_SET & (val( table ) mod val( arg )))
+                return (Flow.CMD_OK_SET & (val( table ) mod val( arg )))
                 
             case else
                 ' TODO: plugins
@@ -378,7 +378,7 @@ namespace TScript
     end function
     
     sub setTableValue( v as string )
-        TScript._table = v
+        Flow._table = v
     end sub
     
     function setPart( d as string, sk as string, sv as string ) as string
@@ -433,7 +433,7 @@ namespace TScript
         return result
     end function
     
-    function getPart( from as string, gk as string ) as string
+    function getPart( from as string, gk as string, def as string = "" ) as string
         dim ofs as integer = 1
         dim k as string
         dim as integer m = 0
@@ -461,10 +461,10 @@ namespace TScript
                 m = 0
             end if
         wend        
-        return ""
+        return def
     end function
 
-    function newParts( from as string = "", keys as string = "" ) as string
+    function newBundle( from as string = "", keys as string = "" ) as string
         if( len( keys ) = 0 ) then
             return ""
         end if
@@ -473,28 +473,28 @@ namespace TScript
         dim as string key, result = ""
         while( e > 0 )
             key = mid( keys, s, (e - s) )
-            result = TScript.setPart( result, key, TScript.getPart( from, key ) )
+            result = Flow.setPart( result, key, Flow.getPart( from, key ) )
             s = (e + 1)
             e = instr( s, from, "/" )
         wend
         return result
     end function
     
-    function newPartsKV( key as string, value as string ) as string
+    function newBundleWithKV( key as string, value as string ) as string
         dim as string p = ""
-        TScript.setPart( p, key, value )
+        Flow.setPart( p, key, value )
         return p
     end function
 end namespace
 
 #include "modplatform.bas"
-TScriptPlatform.init()
+FlowPlatform.init()
 
 dim as string script = Utils.readFile( "test.txt" )
 dim as DICTSTRING vars = Dict.create()
 
-TScript.load( script, vars )
-Utils.echo( !"\n\nResult: " & TScript.run() )
+Flow.load( script, vars )
+Utils.echo( !"\n\nResult: " & Flow.run() )
 
 sleep
 end
