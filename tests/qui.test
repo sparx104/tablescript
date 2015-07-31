@@ -1,0 +1,28 @@
+# QUI test
+
+:START
+    M = @ ""
+    M = qui.addMenuItemTo M value "Value Test" onClickGoto :VALUE
+    M = qui.addMenuItemTo M value "Message Test" onClickGoto :MSG
+    M = qui.addMenuItemTo M value "Exit" onClickGoto :EXIT
+    qui.showMenuWithPrompt "Select A Test" items M title "QUI Test"
+    stop
+
+:VALUE
+    qui.getValueWithPrompt "Enter your name" title "Value Test" onDoneGoto :VALUE:DONE
+    stop
+    
+:VALUE:DONE
+    E = qui.getLastValue
+    E = join "You entered: " & E
+    qui.showMessage E title "Value Test" onDoneGoto :START
+    stop
+    
+:MSG
+    qui.showMessageWithPrompt "Results" value "1\n2\n3\n" onDoneGoto :START
+    stop
+    
+:EXIT
+    qui.clear
+    echo "** DONE **\n\n"
+    stop
