@@ -1,3 +1,17 @@
+newBundle >data
+<"Chris" >data'name
+<"Old" >data'age
+
+<data echo; <"|n" echo
+<data'name echo
+
+<"|n" echo
+
+<"Testing" cutstring(4) <'start echo
+
+
+stop
+
 goto(:FILE_TEST)
 
 :EVENT_TEST

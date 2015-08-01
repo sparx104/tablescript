@@ -30,7 +30,7 @@ namespace FlowPlatform
                 
             case "newfilespec", "filespec",  _
                     "newexecspec", "execspec"
-                return FlowPlatform._okNewKit( "file", arg )
+                return FlowPlatform._okNewBundle( "file", arg )
             
             case "readfile"
                 return FlowPlatform._readFile( table )

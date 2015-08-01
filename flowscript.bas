@@ -40,6 +40,10 @@ namespace Flow
     declare function newBundle( from as string = "", keys as string = "" ) as string
     declare function newBundleWithKV( key as string, value as string ) as string
     
+    declare function _getVar( k as string, er as byte ptr ) as string
+    declare sub _setVar( k as string, v as string )
+    declare function _toBool( v as string ) as integer
+    
     dim _plugins( 0 to 14 ) as function( byref as string, byref as string, byref as string, byref as string ) as string
     dim _plugin_count as integer
 
@@ -93,8 +97,9 @@ namespace Flow
         dim as integer call_stack_ptr
         dim as integer s_idx, l = len( Flow._script ), t
         dim as integer in_q = FALSE, wait_eol = FALSE
-        dim as string c, token = "", arg, current_app = ""
+        dim as string c, token = "", arg, current_app = "", ts
         dim as integer s = 1
+        dim as byte er      'used for error in _getVar()
         if( len( from ) > 0 ) then
             s = Dict.intValueOf( Flow._labels, from, -1 )
             if( s = -1 ) then
@@ -162,7 +167,7 @@ namespace Flow
                     if( len( token ) > 0 ) then
                         ' > & : are a special cases as they're plain strings (should be var)
                         ' being treated as though they were text strings
-                        if( (token <> ">") and (token <> ":") ) then
+                        if( (token <> ">") andalso (token <> ":") ) then
                             if( asc( arg, 1 ) = 34 ) then           '34 is "
                                 'quoted string
                                 arg = mid( arg, 2 )
@@ -173,9 +178,10 @@ namespace Flow
                                 arg = str( val( arg ) )
                             elseif( len( arg ) > 0 ) then
                                 'must be a variable
-                                'if( Flow._containsVar( arg ) ) then
-                                if( Dict.containsKey( Flow._vars, arg ) ) then
-                                    arg = Dict.valueOf( Flow._vars, arg )
+                                er = 0
+                                ts = Flow._getVar( arg, @er )
+                                if( er = 1 ) then
+                                    arg = ts
                                 else
                                     Utils.echoError( ("[Flow] Undefined variable: " & arg & "  @ " & s_idx) )
                                     return 0
@@ -198,8 +204,8 @@ namespace Flow
                         end if
                         select case( token )
                             case ">"
-                                'Flow._setVar( arg, table )
-                                Dict.set( Flow._vars, arg, Flow._table )
+                                Flow._setVar( arg, Flow._table )
+                                'Dict.set( Flow._vars, arg, Flow._table )
                             case "<"
                                 Flow._table = arg
                             case "~"
@@ -207,7 +213,7 @@ namespace Flow
                             case ":"
                                 #ifdef Flow_LOG_LABELS
                                     Utils.echo( ("[Flow] Encountered Label: " & arg & "  @ " & s_idx & !"\n") )
-                                #endif                            
+                                #endif
                             case ""
                                 ' do nothing
                             case else
@@ -219,7 +225,6 @@ namespace Flow
                                     ' remove the .
                                     token = mid( token, 2 )
                                 else
-                                    'TODO: check this works
                                     current_app = mid( token, 1, (t - 1) )
                                     token = mid( token, (t + 1) )
                                 end if
@@ -284,7 +289,18 @@ namespace Flow
             end if
             RETURN_ERROR( ("No such class " & plugin) )
         end if
+        dim as string ts
         select case( cmd )
+            'variables
+            case "getvar"
+                dim as byte er = 0
+                ts = Flow._getVar( arg, @er )
+                if( er = 1 ) then
+                    RETURN_OK_SET( ts )
+                else
+                    RETURN_ERROR( ("Missing variable: " & arg) )
+                end if
+                
             'flow control
             case "goto"
                 return (Flow.CMD_GOTO & arg)
@@ -299,13 +315,21 @@ namespace Flow
             'strings
             case "findindexof"
                 RETURN_OK_SET( (instr( table, arg ) - 1) )
-            case "keepto", "keepupto"
+            case "findanycaseindexof", "findindexofanycase"
+                RETURN_OK_SET( (instr( lcase( table ), lcase( arg ) ) - 1) )
+            case "croprightoffat", "cropto"
                 RETURN_OK_SET( mid( table, 1, (val( arg ) + 1) ) )
-            case "keepfrom":
+            case "cropleftoffat", "cropfrom":
                 RETURN_OK_SET( mid( table, (val( arg ) + 1) ) )
+            case "cutstring"
+                ts = Flow.newBundleWithKV( "start", mid( table, 1, val( arg ) ) )
+                ts = Flow.setPart( ts, "end", mid( table, (val( arg ) + 1) ) )
+                RETURN_OK_SET( ts )
+            case "getlength", "length"
+                RETURN_OK_SET( str( len( table ) ) )
                 
             'parts
-            case "newparts", "newdict"
+            case "newbundle"
                 RETURN_OK_SET( Flow.newBundle( table, arg ) )
             case "part"
                 Flow._last_value = arg
@@ -331,32 +355,32 @@ namespace Flow
                 
             ' conditionals
             case "?", "true?"
-                if( (table <> "") andalso (cint( table ) <> 0) ) then
+                if( (table <> "") andalso (val( table ) <> 0) ) then
                     return Flow.CMD_OK
                 else
                     return Flow.CMD_SKIP
                 end if
             case "false?"
-                if( (table = "") orelse (cint( table ) = 0) ) then       '48 is 0
+                if( (table = "") orelse (val( table ) = 0) ) then
                     return Flow.CMD_OK
                 else
                     return Flow.CMD_SKIP
                 end if
                 
             ' conditional operations
-            case "is", "isequalto"
+            case "is", "isequalto", "is=", "is=="
                 return iif( (table = arg), OK_SET_TRUE, OK_SET_FALSE )
-            case "gt", "greaterthan", "isgreatherthan"
+            case "isgt", "isgreaterthan", "isover", "is>"
                 return iif( (val( table ) > val( arg )), OK_SET_TRUE, OK_SET_FALSE )
-            case "gte", "greaterthanorequalto", "isgreatherthanorequalto"
+            case "isgte", "isgreatherthanorequalto", "is>="
                 return iif( (val( table ) >= val( arg )), OK_SET_TRUE, OK_SET_FALSE )
-            case "lt", "lessthan", "islessthan"
+            case "islt", "islessthan", "isunder", "is<"
                 return iif( (val( table ) < val( arg )), OK_SET_TRUE, OK_SET_FALSE )
-            case "lte", "lessthanorequalto", "islessthanorequalto"
+            case "islte", "islessthanorequalto", "is<="
                 return iif( (val( table ) <= val( arg )), OK_SET_TRUE, OK_SET_FALSE )
-            case "not", "isnotequalto"
+            case "isnot", "isnotequalto", "is<>", "is!="
                 return iif( (table <> arg), OK_SET_TRUE, OK_SET_FALSE )
-                
+            
             ' maths ops
             case "append", "join"
                 return (Flow.CMD_OK_SET & table & arg)
@@ -370,6 +394,14 @@ namespace Flow
                 return (Flow.CMD_OK_SET & (val( table ) / val( arg )))
             case "moddivby"
                 return (Flow.CMD_OK_SET & (val( table ) mod val( arg )))
+            
+            'boolean ops
+            case "and"
+                RETURN_OK_SET( iif( (Flow._toBool( table ) and Flow._toBool( arg )), "1", "0" ) )
+            case "or"
+                RETURN_OK_SET( iif( (Flow._toBool( table ) or Flow._toBool( arg )), "1", "0" ) )
+            case "not"
+                RETURN_OK_SET( iif( Flow._toBool( table ), "0", "1" ) )
                 
             case else
                 ' TODO: plugins
@@ -464,6 +496,37 @@ namespace Flow
         return def
     end function
 
+    function containsPart( from as string, gk as string ) as integer
+        dim ofs as integer = 1
+        dim k as string
+        dim as integer m = 0
+        
+        while( ofs < len( from ) )
+            dim o as integer
+            dim l as integer = 0
+            o = asc( from, ofs )
+            ofs += 1
+            while( o >= 97 )
+                l = ((l + (o - 97)) shl 4)
+                o = asc( from, ofs )
+                ofs += 1
+            wend    
+            l += (o - 65)
+            o = ofs
+            ofs += l
+            if( m = 0 ) then
+                k = mid( from, o, l )
+                m = 1
+            else
+                if( k = gk ) then
+                    return TRUE
+                end if
+                m = 0
+            end if
+        wend        
+        return FALSE
+    end function
+    
     function newBundle( from as string = "", keys as string = "" ) as string
         if( len( keys ) = 0 ) then
             return ""
@@ -482,15 +545,84 @@ namespace Flow
     
     function newBundleWithKV( key as string, value as string ) as string
         dim as string p = ""
-        Flow.setPart( p, key, value )
-        return p
+        return Flow.setPart( p, key, value )
     end function
+    
+    function _getVar( k as string, er as byte ptr ) as string
+        dim as integer e = instr( k, "'" )
+        if( e > 0 ) then
+            dim as string bundle = mid( k, 1, (e - 1) )
+            k = mid( k, (e + 1) )
+            if( len( bundle ) = 0 ) then
+                bundle = Flow._table
+            else
+                if( Dict.containsKey( Flow._vars, bundle ) ) then
+                    bundle = Dict.valueOf( Flow._vars, bundle )
+                else
+                    *er = 0
+                    return Utils.EMPTY_STRING
+                end if
+            end if
+            if( Flow.containsPart( bundle, k ) ) then
+                *er = 1
+                return Flow.getPart( bundle, k )
+            end if
+        else
+            if( Dict.containsKey( Flow._vars, k ) ) then
+                *er = 1
+                return Dict.valueOf( Flow._vars, k )
+            end if
+        end if
+        *er = 0
+        return Utils.EMPTY_STRING
+    end function
+    
+    sub _setVar( k as string, v as string )
+        dim as integer e = instr( k, "'" )
+        if( e > 0 ) then
+            dim as byte using_table = 0
+            dim as string bundle = mid( k, 1, (e - 1) )
+            dim as string b
+            k = mid( k, (e + 1) )
+            if( len( bundle ) = 0 ) then
+                using_table = 1
+                b = Flow._table
+            else
+                if( Dict.containsKey( Flow._vars, bundle ) ) then
+                    b = Dict.valueOf( Flow._vars, bundle )
+                else
+                    b = ""
+                end if
+            end if
+            b = Flow.setPart( b, k, v )
+            if( using_table ) then
+                Flow._table = b
+            else
+                Dict.set( Flow._vars, bundle, b )
+            end if
+        else
+            Dict.set( Flow._vars, k, v )
+        end if
+    end sub
+    
+    function _toBool( v as string ) as integer
+        if( val( v ) = 0 ) then
+            return FALSE
+        end if
+        return TRUE
+    end function
+            
 end namespace
+
+dim as string script_file = command(1)
+if( script_file = "" ) then
+    script_file = "test.txt"
+end if
 
 #include "modplatform.bas"
 FlowPlatform.init()
 
-dim as string script = Utils.readFile( "test.txt" )
+dim as string script = Utils.readFile( script_file )
 dim as DICTSTRING vars = Dict.create()
 
 Flow.load( script, vars )
