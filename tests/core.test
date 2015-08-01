@@ -14,13 +14,13 @@
 
   <2 >X
   <4 >Y
-  <"\nX=" echo; <X echo; <", Y=" echo; <Y echo
+  <"|nX=" echo; <X echo; <", Y=" echo; <Y echo
   <Y >X
   <5 >Y
-  <"\nX=" echo; <X echo; <", Y=" echo; <Y echo
-  <<"X" >Z
-  <"\nZ=" echo; <Z echo
-  <"\n--\n" echo
+  <"|nX=" echo; <X echo; <", Y=" echo; <Y echo
+  getVar("X") >Z
+  <"|nZ=" echo; <Z echo
+  <"|n--|n" echo
   
   
 #--------------
@@ -30,26 +30,27 @@
   <-10 >X
   <X add(20) >X             <" " echo; <X echo
   <X divideBy(2) >X         <" " echo; <X echo
-  <X decreaseBy(2) >X       <" " echo; <X echo
+  <X decreaseBy(-1) >X      <" " echo; <X echo
   <X multiplyBy(0.5) >X     <" " echo; <X echo
   <X subtract(6) >X         <" " echo; <X echo
   <X modDivBy(2) >X         <" " echo; <X echo
-  <"\n--\n" echo
+  <"|n--|n" echo
   
 #--------------
 # strings
 #   hello,world! | 6 | 3 -1 3
 
-  X = @ "world!hello,test"
+  <"world!hello,test" >X
   <X cropTo(6) >W
   <X cropFrom(6), cropTo(6) >H
-  <H append(W) append(" | ") echo
+  <H append(W) append(" |b ") echo
   <W getLength >L
   <L echo
+  <" |b " echo
 
   <W findIndexOf("l") >X
   <W findIndexOf("L") >Y
-  <W findAnyCaseIndexOf("L") >W
+  <W findAnyCaseIndexOf("L") >Z
   <X echo; <" " echo; <Y echo; <" " echo; <Z echo
   <"|n--|n" echo
 
@@ -70,8 +71,8 @@
   <456 >X'123
 
   <X'fname >FNAME
-  <FNAME echo; <X'age echo
-  <X getParts("title/sname") >Y
+  <FNAME echo; <", " echo, <X'age echo
+  <X newBundle("title/sname") >Y
   <"|n" echo; <X echo 
   <"|n" echo; <Y echo
   <"|n--|n" echo
@@ -91,7 +92,7 @@
     return
     
   :LOOP_TEST_END
-    <"\n--\n" echo
+    <"|n--|n" echo
   
 #--------------
 # testIf
@@ -103,7 +104,7 @@
     <X isGreaterThan(Y), echo
     <X isEqualTo(Y), echo
     <X isLessThanOrEqualTo(5), echo
-    <X isGreaterThanOrEqualTo(10), echo
+    <Y isGreaterThanOrEqualTo(10), echo
     <" " echo
     
     <X is==(5), echo
@@ -111,18 +112,19 @@
     <X is>(Y), echo
     <X is=(Y), echo
     <X is<=(5), echo
-    <X is>=(10), echo
+    <Y is>=(10), echo
     <" " echo
     
     <"HI" >A
     <A is("HI"), echo
     <A isNot("HI"), echo
-    <A is "HELLO", echo
-    <A isNot "HELLO" >Z
+    <A is("HELLO"), echo
+    <A isNot("HELLO") >Z
     <Z echo
     <" " echo
     
     <Z not >Z, echo
+    <" " echo
     <Z not, echo
     <"|n--|n" echo
   
@@ -151,5 +153,5 @@
   
   <"|n--|n" echo
   
-  <"!n!n ** DONE **" echo
+  <"|n|n ** DONE **" echo
   

@@ -318,7 +318,7 @@ namespace Flow
             case "findanycaseindexof", "findindexofanycase"
                 RETURN_OK_SET( (instr( lcase( table ), lcase( arg ) ) - 1) )
             case "croprightoffat", "cropto"
-                RETURN_OK_SET( mid( table, 1, (val( arg ) + 1) ) )
+                RETURN_OK_SET( mid( table, 1, val( arg ) ) )
             case "cropleftoffat", "cropfrom":
                 RETURN_OK_SET( mid( table, (val( arg ) + 1) ) )
             case "cutstring"
@@ -372,7 +372,7 @@ namespace Flow
                 return iif( (table = arg), OK_SET_TRUE, OK_SET_FALSE )
             case "isgt", "isgreaterthan", "isover", "is>"
                 return iif( (val( table ) > val( arg )), OK_SET_TRUE, OK_SET_FALSE )
-            case "isgte", "isgreatherthanorequalto", "is>="
+            case "isgte", "isgreaterthanorequalto", "is>="
                 return iif( (val( table ) >= val( arg )), OK_SET_TRUE, OK_SET_FALSE )
             case "islt", "islessthan", "isunder", "is<"
                 return iif( (val( table ) < val( arg )), OK_SET_TRUE, OK_SET_FALSE )
@@ -619,16 +619,22 @@ if( script_file = "" ) then
     script_file = "test.txt"
 end if
 
+dim as integer er = 0
+dim as string script = Utils.readFile( script_file, er )
+if( er <> 0 ) then
+    print "Unable to load script file: " & script_file
+    end
+end if
+
 #include "modplatform.bas"
 FlowPlatform.init()
 
-dim as string script = Utils.readFile( script_file )
 dim as DICTSTRING vars = Dict.create()
 
 Flow.load( script, vars )
 Utils.echo( !"\n\nResult: " & Flow.run() )
 
-sleep
+'sleep
 end
 
 
