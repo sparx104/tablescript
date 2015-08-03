@@ -25,13 +25,19 @@ namespace FlowPlatform
         dim as string tmp_s, ts
         dim as integer ti
         select case( cmd )
-            case "ondonegoto", "onerrorgoto", "file", "args"
+            case "ondonegoto", "onerrorgoto", "file", "args", "success", "content"
                 return FlowPlatform._okSetPart( table, cmd, arg )
                 
-            case "newfilespec", "filespec",  _
-                    "newexecspec", "execspec"
-                return FlowPlatform._okNewBundle( "file", arg )
-            
+            case "getcontent", "getsuccess"
+                return FlowPlatform._okValue( Flow.getPart( table, mid( cmd, 4 ) ) )
+                
+            case "newfilebundle"
+                tmp_s = Flow.setPart( "", "content", table )
+                tmp_s = Flow.setPart( tmp_s, "file", arg )
+                return FlowPlatform._okValue( tmp_s )
+            case "newexecbundle"
+                return FlowPlatform._okNewBundle( "file", table )
+                
             case "readfile"
                 return FlowPlatform._readFile( table )
             case "writefile"
@@ -45,16 +51,16 @@ namespace FlowPlatform
                 return FlowPlatform._okValue( FlowPlatform._listFilesIn( table ) )
                 
             case "loadconfig"
-                return FlowPlatform._okValue(   _
-                        FlowPlatform._loadConfig( table )  _
-                    )
+                return FlowPlatform._loadConfig( table )
+                
             case "getdateserial"
                 return FlowPlatform._okValue( FlowPlatform._createDateSerial() )
-            case "getdatekit"
+            case "getdatebundle"
                 return FlowPlatform._okValue( FlowPlatform._createDateBundle() )
             
             case "setenv", "setenvironmentvariable"
                 setenviron (arg & "=" & table)
+                return Flow.CMD_OK
             case "getenv", "getenvironmentvariable"
                 return FlowPlatform._okValue( environ( table ) )
             
@@ -62,26 +68,30 @@ namespace FlowPlatform
                 ts = Flow.getPart( table, "ondonegoto" )
                 if( exec( Flow.getPart( table, "file" ), Flow.getPart( table, "args" ) ) = -1 ) then
                     ts = Flow.getPart( table, "onerrorgoto", ts )
+                    Flow.setTableValue( Flow.setPart( table, "success", "0" ) )
+                else
+                    Flow.setTableValue( Flow.setPart( table, "success", "1" ) )
                 end if
                 return (Flow.CMD_GOTO & ts)
                 
             case "getrandomnumber":
                 ti = val( Flow.getPart( table, "from" ) )
-                ti = ((rnd() * (val( Flow.getPart( table, "to" ) ) - ti)) + ti)
+                ti = ((rnd() * (val( Flow.getPart( table, "upto" ) ) - ti)) + ti)
                 return FlowPlatform._okValue( str( ti ) )
             
             case "browseto"
                 Utils.browseTo( table )
+                return Flow.CMD_OK
                 
             case "getid"
                 #ifdef __FB_WIN32__
-                    FlowPlatform._okValue( "native/w32" )
+                    return FlowPlatform._okValue( "native/w32" )
                 #endif
                 #ifdef __FB_LINUX__
-                    FlowPlatform._okValue( "native/linux" )
+                    return FlowPlatform._okValue( "native/linux" )
                 #endif
                 #ifdef __FB_DOS__
-                    FlowPlatform._okValue( "native/dos" )
+                    return FlowPlatform._okValue( "native/dos" )
                 #endif
                                 
         end select
@@ -105,26 +115,28 @@ namespace FlowPlatform
         dim as string res = Utils.readFile( Flow.getPart( table, "file" ), er )
         if( er = 0 ) then
             dim as string cont = Flow.getPart( table, "ondonegoto" )
-            Flow.setTableValue( res )
+            table = Flow.setPart( table, "content", res )
+            Flow.setTableValue( Flow.setPart( table, "success", "1" ) )
             return (Flow.CMD_GOTO & cont)
         else
+            Flow.setTableValue( Flow.setPart( table, "success", "0" ) )
             return (Flow.CMD_GOTO & Flow.getPart( table, "onerrorgoto" ))
         end if
     end function
     
     function _writeFile( table as string, arg as string ) as string
-        ' table is a filespec with "value" set to what is to be written
-        ' arg will replace "value" if not empty
-        if( arg <> "" ) then
-            arg = Flow.getPart( table, "value" )
-        end if
-        dim as integer er = Utils.writeFile( Flow.getPart( table, "file" ), arg )
-        if( er = FALSE ) then
+        ' table is a filespec with "content" set to what is to be written
+        ' we update "success" in the filespec and return that to the table
+        dim as integer ok = Utils.writeFile(  _
+                Flow.getPart( table, "file" ),   _
+                Flow.getPart( table, "content" )  _
+            )
+        if( ok ) then
             dim as string cont = Flow.getPart( table, "ondonegoto" )
-            Flow.setTableValue( "1" )
+            Flow.setTableValue( Flow.setPart( table, "success", "1" ) )
             return (Flow.CMD_GOTO & cont)
         else
-            Flow.setTableValue( "0" )
+            Flow.setTableValue( Flow.setPart( table, "success", "0" ) )
             return (Flow.CMD_GOTO & Flow.getPart( table, "onerrorgoto" ))
         end if        
     end function
@@ -153,10 +165,11 @@ namespace FlowPlatform
         return Flow.setPart( result, "_count", str( index ) )
     end function
     
-    function _loadConfig( n as string ) as string
+    function _loadConfig( table as string ) as string
         dim as string key = "", value, l
         dim as integer ff = freefile(), e
         dim as string prefix = "", result = ""
+        dim as string n = Flow.getPart( table, "file" )
         if( open( n for input as ff ) = 0 ) then
             while( not eof( ff ) )
                 line input #ff, l
@@ -175,8 +188,13 @@ namespace FlowPlatform
                     end if
                 end if
             wend
+            table = Flow.setPart( table, "content", result )
+            Flow.setTableValue( Flow.setPart( table, "success", "1" ) )
+            return (Flow.CMD_GOTO & Flow.getPart( table, "ondonegoto" ) )
+        else
+            Flow.setTableValue( Flow.setPart( table, "success", "0" ) )
+            return (Flow.CMD_GOTO & Flow.getPart( table, "onerrorgoto" ))
         end if
-        return result
     end function
     
     function _createDateSerial() as string

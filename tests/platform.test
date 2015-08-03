@@ -8,40 +8,42 @@
 # environment variables
 #   passed
 
-  platform.setEnvironmentVariable "test_var" to "passed"
-  X = platform.getEnvironmentVariable "test_var"
-  echo X
-  echo "\n--\n"
+  <"passed" platform.setenv("test_var")
+  <"test_var" platform.getEnv echo
+  <"|n--|n" echo
   
 
 #--------------
 # date serial
-#   (today's date as "YYYYMMDDHHIISS")
+#   (today's date as "YYYYMMDDHHIISS" then as a bundle)
 
-  X = platform.getDateSerial
-  echo X
-  echo "\n--\n"
+  platform.getDateSerial echo; <"|n" echo
+  platform.getDateBundle echo
+  <"|n--|n" echo
+  
   
 #--------------
 # random number
 #   random numbers: (5 random numbers 10 >= n > 20)
 
-  echo "random numbers: "
-  ITR = @ 5
+  <"random numbers: " echo
+  <5 >ITR
+  newBundle >RANGE
+  <10 >RANGE'from
+  <20 >RANGE'upto
   :RND:LOOP
-    Y = platform.getRandomNumberFrom 10 upTo 20
-    echo Y & " "
-    ITR = decrease ITR by 1
-  (ITR) goto :RND:LOOP
-  echo "\n--\n"
+    <RANGE platform.getRandomNumber >Y
+    <Y echo, <" " echo
+    <ITR subtract(1) >ITR
+  <ITR isNot(0) ? goto(:RND:LOOP)
+  <"|n--|n" echo
   
 #--------------
 # get platform ID
 #   (the platform ID, some are: js, js/chrome_app, php, windows, linux, android)
 
-  X = platform.getId
-  print X
-  echo "\n--\n"
+  platform.getId echo
+  <"|n--|n" echo
   
 
 #--------------
@@ -50,50 +52,90 @@
 #   Count: (number of files in the next list)
 #   (a list of one or more files, "platform_test.txt" must be one)
 
-  N = @ "platform_test.txt"
-  OK = platform.writeToFile N value "testing"
-  FAILED = not OK
-  (FAILED) echo "!! Unable to write file\n"
-  (FAILED) goto :SKIP_FILE_TEST
-  
-  X = platform.readFromFile N
-  echo X & "\n"
-  LIST = platform.listFilesIn ""
-  COUNT = getPart "count" from LIST
-  echo "Count: " & COUNT && "\n"
-  INDEX = @ 0
-  :FILE_LIST_LOOP
-    COUNT = decrease COUNT by 1
-    F = getPart COUNT from LIST
-    echo ">>" & INDEX && ": " &&& F &&&& "\n"
-    INDEX = increase INDEX by 1
-    CONT = testIf COUNT > 0
-  (CONT) goto :FILE_LIST_LOOP
-  :SKIP_FILE_TEST
-  echo "\n--\n"
+:FILE_TEST
+    <"testing" 
+    # newFileBundle sets the table as 'content
+    platform.newFileBundle [
+            .file("platform_test.txt")
+            .onDoneGoto(:FILE_TEST:WRITE_OK)
+            .onErrorGoto(:FILE_TEST:ERROR)
+        ]
+    platform.writeFile
+    stop
+        
+:FILE_TEST:WRITE_OK
+    # the last used file bundle is on the table
+    platform.onDoneGoto(:FILE_TEST:READ_OK)
+    platform.readFile
+    stop
+    
+:FILE_TEST:READ_OK
+    #platform.readFile will have put the updated bundle on the table
+    <'content echo <"|n" echo
+    goto(:FILE_TEST:DONE)
+    
+:FILE_TEST:ERROR
+    echo
+    <"** File test failed|n" echo
+    
+:FILE_TEST:DONE
+    <"|n--|n" echo
+
+
+:LIST_TEST
+    <"" platform.listFiles >LIST
+    <"Count: " echo, <LIST'_count echo
+    <0 >INDEX
+    :FILE_LIST_LOOP
+        <">>" echo, <INDEX echo, <": " echo
+        <LIST part(INDEX) get, echo
+        <"|n" echo
+        <INDEX add(1) >INDEX
+    <INDEX isLessThan(LIST'_count) ? goto(:FILE_LIST_LOOP)
+
+:LIST_TEST:DONE
+    <"|n--|n" echo
 
 #--------------
 # config file support
 #   Chris Dickens, 36
 
-  N = @ "platform_test.txt"
-  OK = platform.writeToFile N value "age=36\n\n[name]\nf=Chris\ns=Dickens"
-  FAILED = not OK
-  (FAILED) echo "!! Unable to write file\n"
-  (FAILED) goto :SKIP_CONFIG_TEST
+:CONFIG_TEST
+    <"age=36|n|n[name]|nf=Chris|ns=Dickens"
+    # newFileBundle will pick up the table as 'content
+    platform.newFileBundle [
+            .file("platform_test.txt")
+            .onDoneGoto(:CONFIG_TEST:READ)
+            .onErrorGoto(:CONFIG_TEST:WRITE_ERROR)
+            # newFileBundle picks up the table as 'value but you can specify the value too:
+            #.content("age=36\n\n[name]\nf=Chris\ns=Dickens")
+        ]
+    platform.writeFile
+    stop
+
+:CONFIG_TEST:WRITE_ERROR
+    <"!! Unable to write file|n" echo
+    goto(:CONFIG_TEST:END)
+
+:CONFIG_TEST:READ
+    # the original file bundle is put on the table with 'content set to what was read
+    platform.onDoneGoto(:CONFIG_TEST:VIEW)
+    platform.onErrorGoto(:CONFIG_TEST:READ_ERROR)
+    # although 'content is currently set it'll be ignored by loadConfig
+    platform.loadConfig
+    stop
+
+:CONFIG_TEST:READ_ERROR
+    <"!! Unable to read config|n" echo
+    goto(:CONFIG_TEST:END)
+
+:CONFIG_TEST:VIEW
+    # config file bundle will be on the table, we need 'content
+    <'content >Z
+    <Z'name.f echo, <" " echo, <Z'name.s echo, <", " echo, <Z'age echo
   
-  Z = platform.loadConfigFrom N
-  EMPTY = testIf Z is ""
-  (EMPTY) echo "!! Failed to read config\n"
-  (EMPTY) goto :SKIP_CONFIG_TEST
-  
-  FN = getPart "name.f" from Z
-  SN = getPart "name.s" from Z
-  A = getPart "age" from Z
-  
-  echo FN & " " && SN &&& ", " &&&& A
-  :SKIP_CONFIG_TEST
-  echo "\n--\n"
+:CONFIG_TEST:END
+    <"|n--|n" echo
 
 #--------------
 # exec, both of valid app and missing one (with error handler).  Also that
@@ -102,34 +144,54 @@
 #   Exec2: Failed to execute - this is a PASS
 #
 
-  :EXEC1
-  platform.exec "platform-test.exe" withArgs "Hello, world!" onDoneGoto :EXEC1:OK onErrorGoto :EXEC1:ERR
-  stop
-  
-  :EXEC1:OK
-    X = platform.readFromFile "exec.txt"
-    echo "Exec1: " & X && "\n"
-    goto :EXEC2
+:EXEC1
+    platform.newFileBundle [
+            .file("platform-test.exe")
+            .args("Hello, world!")
+            .onDoneGoto(:EXEC1:OK)
+            .onErrorGoto(:EXEC1:ERR)
+        ]
+    platform.exec
+    stop
     
-  :EXEC1:ERR
-    echo "Exec1: ** FAILED **\n"
-    goto :EXEC2
+:EXEC1:OK
+    platform.newFileBundle [
+            .file("exec.txt")
+            .onDoneGoto(:EXEC1:READ)
+            .onErrorGoto(:EXEC1:ERR)
+        ]
+    platform.readFile
+    stop
+    
+:EXEC1:READ
+    # readfile will have put the contents on the table
+    >X, <"Exec1: " echo, <X'content echo, <"|n" echo
+    goto(:EXEC2)
+    
+:EXEC1:ERR
+    <"Exec1: ** FAILED **|n" echo
+    goto(:EXEC2)
     
   
-  :EXEC2
-  platform.exec "missing-app.exe" withArgs "" onDoneGoto :EXEC2:OK onErrorGoto :EXEC2:ERR
-  # stop - exec should stop, we'll not do it manually to test this
+:EXEC2
+    platform.newFileBundle [
+            .file("missing-app.exe")
+            .onDoneGoto(:EXEC2:OK)
+            .onErrorGoto(:EXEC2:ERR)
+        ]
+    platform.exec
+    # stop - exec should stop, we'll not do it manually to test this
   
-  :EXEC2:OK
-    echo "Exec2: exec responded with OK or fell through, this FAILS this test\n"
-    goto :EXEC_DONE
+:EXEC2:OK
+    <"Exec2: exec responded with OK or fell through, this FAILS this test|n" echo
+    goto(:EXEC_DONE)
     
-  :EXEC2:ERR
-    echo "Exec2: Failed to execute - this is a PASS\n"
-    goto :EXEC_DONE
+:EXEC2:ERR
+    <"Exec2: Failed to execute - this is a PASS|n" echo
+    goto(:EXEC_DONE)
   
-  :EXEC_DONE
-  echo "\n--\n"
+:EXEC_DONE
+    <"|n--|n" echo
 
 #--------------
 # browseto
@@ -137,5 +199,5 @@
 #   if browsing would make no sense/is unavailable)
 #
 
-  platform.browseTo "http://www.google.com"
+  <"http://www.google.com" platform.browseTo 
   
